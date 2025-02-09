@@ -2,6 +2,7 @@ import { Contact } from "../models/contact.model.js";
 import { APIError } from "../utils/APIError.js";
 import { APIResponse } from "../utils/APIResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { Op } from "sequelize";
 
 const linkContacts = asyncHandler(async (req,res) => {
     const { email, phoneNumber } = req.body;
@@ -26,6 +27,7 @@ const linkContacts = asyncHandler(async (req,res) => {
         });
         existingContacts = [...existingContacts, ...phoneContacts];
       }
+      console.log(existingContacts.map(contact => contact.dataValues));
       
       if(existingContacts.length === 0){
         const newContact = await Contact.create({
@@ -44,19 +46,25 @@ const linkContacts = asyncHandler(async (req,res) => {
           },
         },"Contact Created Successfully"));
       }
+
+      const primaryContacts = existingContacts.filter(contact => contact.linkPrecedence === 'primary');
+
+    if(primaryContacts.length > 1){
+      const sortedPrimaryContacts = primaryContacts.sort((a, b) => a.createdAt - b.createdAt);
+    
+      const newPrimaryContact = sortedPrimaryContacts[0];
+      const newSecondaryContact = sortedPrimaryContacts[1];
+
+      newSecondaryContact.linkPrecedence = 'secondary';
+      newSecondaryContact.linkedId = newPrimaryContact.id;
+      await newSecondaryContact.save();
+
+      existingContacts = existingContacts.filter(contact => contact.id !== newSecondaryContact.id);
+      existingContacts.push(newPrimaryContact, newSecondaryContact);
+    }
   
       const primaryContact = existingContacts.sort((a, b) => a.createdAt - b.createdAt)[0];
-      const secondaryContacts = existingContacts.filter(contact => contact.id !== primaryContact.id);
-
-      const emails = [primaryContact.email, ...secondaryContacts.map(contact => contact.email)]
-      .filter(e => e)
-      .filter((value, index, self) => self.indexOf(value) === index);
-
-
-      const phoneNumbers = [primaryContact.phoneNumber, ...secondaryContacts.map(contact => contact.phoneNumber)]
-      .filter(p => p)
-      .filter((value, index, self) => self.indexOf(value) === index);
-
+      
       if((email && primaryContact.email !== email) || 
         (phoneNumber && primaryContact.phoneNumber !== phoneNumber)){
         await Contact.create({
@@ -67,11 +75,19 @@ const linkContacts = asyncHandler(async (req,res) => {
         });
       }
 
+      const secondaryContactIds = await Contact.findAll({
+        where: {
+          linkedId: {
+            [Op.eq]: primaryContact.id,
+          },
+        },
+      });
+
     const result = {
       primaryContactId: primaryContact.id,
-      emails,
-      phoneNumbers,
-      secondaryContactIds: secondaryContacts.map(contact => contact.id),
+      emails:[primaryContact.email,...secondaryContactIds.map(contacts => contacts.email).filter(email => email)].filter((value, index, self) => self.indexOf(value) === index),
+      phoneNumbers:[primaryContact.phoneNumber,...secondaryContactIds.map(contacts => contacts.phoneNumber).filter(number => number)].filter((value, index, self) => self.indexOf(value) === index),
+      secondaryContactIds: secondaryContactIds.map(contact => contact.id)
     };
   
     return res.status(200).json(new APIResponse(200,{ contact: result },"Links Fetched Successfully."));
