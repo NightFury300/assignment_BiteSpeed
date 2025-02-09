@@ -1,0 +1,1 @@
+export const DB_NAME = 'bitespeed_4v6t'
