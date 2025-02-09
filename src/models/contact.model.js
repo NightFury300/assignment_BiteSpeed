@@ -19,7 +19,7 @@ const Contact = sequelize.define('Contact', {
       type: DataTypes.INTEGER,
       allowNull: true,
       references: {
-        model: 'Contacts',
+        model: 'contacts',
         key: 'id',
       },
     },
@@ -42,6 +42,7 @@ const Contact = sequelize.define('Contact', {
       allowNull: true,
     },
   }, {
+    tableName:'contacts',
     paranoid: true,
     timestamps: true,
   }
